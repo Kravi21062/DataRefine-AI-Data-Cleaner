@@ -1,163 +1,292 @@
 # DataRefine - AI Data Cleaner
 
-DataRefine is a Streamlit-based data cleaning and profiling tool that helps you upload messy datasets, clean them with smart/manual operations, compare before-vs-after impact, generate AI insights, and export a professional PDF report.
-
-## Features
-
-- Upload CSV/XLS/XLSX files (up to 200 MB)
-- Data quality dashboard (rows, columns, missing, duplicates, quality score)
-- Smart cleaning with AI suggestions (Ollama) and rule-based fallback
-- Manual cleaning operations (missing values, outliers, encoding, scaling, text cleanup)
-- Before-vs-after comparison with metrics and charts
-- AI insight charts (distribution, correlation, category, trend)
-- Export cleaned dataset (CSV/XLSX) and PDF report
+DataRefine is a Streamlit-based AI-powered data cleaning and profiling tool designed for messy real-world datasets. It helps users upload datasets, profile data quality, apply smart/manual cleaning operations, generate AI-driven insights, compare before-vs-after transformations, and export professional PDF reports.
 
 ---
 
-## System Architecture
+# Features
+
+- Upload CSV, XLS, and XLSX datasets
+- Interactive data quality dashboard
+- Smart cleaning with AI suggestions
+- Rule-based fallback cleaning system
+- Missing-value handling
+- Duplicate detection and removal
+- Outlier detection (IQR and Z-score)
+- Encoding and feature scaling
+- Text standardization utilities
+- Before-vs-after comparison analytics
+- AI-generated insights and visualizations
+- Export cleaned datasets
+- Generate PDF reports
+- Undo snapshot history
+
+---
+
+# System Architecture
 
 ```mermaid
 flowchart LR
-    U[User] --> UI[Streamlit UI - app.py]
-    UI --> DU[data_utils.py]
-    UI --> CU[chart_utils.py]
-    UI --> PU[pdf_utils.py]
-    DU --> SK[scikit-learn]
-    DU --> PD[pandas/numpy]
-    CU --> PL[Plotly]
-    PU --> RL[ReportLab + Matplotlib]
-    DU --> OL[Ollama API Optional]
+    U["User"] --> UI["Streamlit UI - app.py"]
+
+    UI --> DU["data_utils.py"]
+    UI --> CU["chart_utils.py"]
+    UI --> PU["pdf_utils.py"]
+
+    DU --> SK["scikit-learn"]
+    DU --> PD["Pandas + NumPy"]
+
+    CU --> PL["Plotly"]
+
+    PU --> RL["ReportLab + Matplotlib"]
+
+    DU --> OL["Ollama API (Optional)"]
 ```
 
 ---
 
-## End-to-End Workflow
+# End-to-End Workflow
 
 ```mermaid
 flowchart TD
-    A[Start App] --> B[Upload Dataset]
-    B --> C[Store raw_df + clean_df]
-    C --> D[Dashboard Profiling]
-    D --> E{Cleaning Mode}
-    E -->|Smart| F[AI Suggestions + Auto Clean]
-    E -->|Manual| G[Manual Operations]
-    F --> H[Update clean_df + History]
+
+    A["Start Application"]
+        --> B["Upload Dataset"]
+
+    B --> C["Store raw_df and clean_df"]
+
+    C --> D["Generate Data Quality Dashboard"]
+
+    D --> E{"Select Cleaning Mode"}
+
+    E -->|Smart Cleaning| F["AI Suggestions + Auto Clean"]
+
+    E -->|Manual Cleaning| G["Apply Manual Operations"]
+
+    F --> H["Update clean_df and Save History"]
     G --> H
-    H --> I[Before vs After]
-    H --> J[AI Insights]
-    I --> K[Export CSV/XLSX]
-    J --> L[Generate PDF Report]
+
+    H --> I["Before vs After Comparison"]
+
+    H --> J["Generate AI Insights"]
+
+    I --> K["Export CSV/XLSX"]
+
+    J --> L["Generate PDF Report"]
 ```
 
 ---
 
-## Smart Cleaning Pipeline
+# Smart Cleaning Pipeline
 
 ```mermaid
 flowchart TD
-    S[Click Auto Clean] --> M[Handle Missing Values]
-    M --> D[Drop Duplicates]
-    D --> O[Detect Outliers IQR]
-    O --> R[Remove Flagged Rows]
-    R --> U[Save Undo Snapshot]
-    U --> Q[Recompute Quality]
-    Q --> V[Show Impact Metrics + Gauge]
+
+    S["Click Auto Clean"]
+        --> M["Handle Missing Values"]
+
+    M --> D["Drop Duplicate Rows"]
+
+    D --> O["Detect Outliers using IQR"]
+
+    O --> R["Remove Flagged Rows"]
+
+    R --> U["Save Undo Snapshot"]
+
+    U --> Q["Recompute Quality Metrics"]
+
+    Q --> V["Display Quality Impact"]
 ```
 
 ---
 
-## AI Suggestion Decision Flow
+# AI Suggestion Decision Flow
 
 ```mermaid
 flowchart TD
-    A[generate_cleaning_suggestions] --> B[Build Dataset Profile]
-    B --> C{Ollama Reachable?}
-    C -->|Yes| D[Call Ollama phi3]
-    D --> E{Valid JSON Output?}
-    E -->|Yes| F[Use AI Suggestions]
-    E -->|No| G[Use Rule-Based Suggestions]
+
+    A["generate_cleaning_suggestions"]
+        --> B["Build Dataset Profile"]
+
+    B --> C{"Is Ollama Reachable?"}
+
+    C -->|Yes| D["Call Ollama phi3"]
+
+    D --> E{"Valid JSON Returned?"}
+
+    E -->|Yes| F["Use AI Suggestions"]
+
+    E -->|No| G["Use Rule-Based Suggestions"]
+
     C -->|No| G
-    F --> H[Add Source Column]
+
+    F --> H["Attach Suggestion Source"]
+
     G --> H
 ```
 
 ---
 
-## Outlier Methods Overview
-
-flowchart LR
-    IQR["IQR Method"] --> F1["Per-column bounds using Q1/Q3"]
-    Z["Z-Score Method"] --> F2["abs(z) > threshold"]
-    Note["No Isolation Forest in current version"]
-
----
-
-## PDF Report Generation Pipeline
+# Outlier Detection Methods
 
 ```mermaid
-flowchart TD
-    A[Click Generate PDF] --> B[build_pdf_report]
-    B --> C[Compute before/after metrics]
-    C --> D[Build report sections]
-    D --> E[Render tables + charts]
-    E --> F[Assemble ReportLab story]
-    F --> G[Return PDF bytes]
-    G --> H[Enable Download Button]
+flowchart LR
+
+    IQR["IQR Method"]
+        --> F1["Per-column bounds using Q1 and Q3"]
+
+    Z["Z-Score Method"]
+        --> F2["abs(z) &gt; threshold"]
+
+    NOTE["Isolation Forest is not implemented in current version"]
 ```
 
 ---
 
-## Project Structure
+# PDF Report Generation Pipeline
+
+```mermaid
+flowchart TD
+
+    A["Click Generate PDF"]
+        --> B["build_pdf_report()"]
+
+    B --> C["Compute Before/After Metrics"]
+
+    C --> D["Build Report Sections"]
+
+    D --> E["Render Tables and Charts"]
+
+    E --> F["Assemble ReportLab Story"]
+
+    F --> G["Generate PDF Bytes"]
+
+    G --> H["Enable Download Button"]
+```
+
+---
+
+# Data Lifecycle and State Management
+
+```mermaid
+stateDiagram-v2
+
+    [*] --> Empty
+
+    Empty --> Loaded : Upload Dataset
+
+    Loaded --> Cleaned : Apply Cleaning Operation
+
+    Cleaned --> Cleaned : More Operations
+
+    Cleaned --> Restored : Undo Restore
+
+    Restored --> Cleaned : New Operation
+
+    Cleaned --> Exported : Export CSV/XLSX/PDF
+```
+
+---
+
+# Project Structure
 
 ```text
 .
-|- app.py
-|- data_utils.py
-|- chart_utils.py
-|- pdf_utils.py
-|- theme.py
-|- requirements.txt
-|- PROJECT_DOCS.md
-`- README.md
+├── app.py
+├── data_utils.py
+├── chart_utils.py
+├── pdf_utils.py
+├── theme.py
+├── requirements.txt
+├── PROJECT_DOCS.md
+└── README.md
 ```
 
 ---
 
-## Key Modules
+# Core Modules
 
 ## `app.py`
 
-- Handles Streamlit pages and navigation
-- Manages `st.session_state`
-- Coordinates cleaning actions, comparisons, and exports
+Responsible for:
 
-## `data_utils.py`
-
-- Dataset loading and profiling
-- Missing-value handling
-- Outlier detection (IQR, Z-score)
-- Column ops, encoding, scaling, text standardization
-- AI suggestions + fallback
-- Insight discovery logic
-
-## `chart_utils.py`
-
-- Shared Plotly theming
-- Dashboard/insight/comparison charts
-- Quality gauge rendering
-
-## `pdf_utils.py`
-
-- ReportLab report assembly
-- Statistical tables and preview tables
-- Matplotlib chart generation and embedding
+- Streamlit navigation and layout
+- Session state management
+- Cleaning workflow orchestration
+- Export coordination
 
 ---
 
-## Installation
+## `data_utils.py`
 
-1. Create and activate a virtual environment (recommended).
-2. Install dependencies:
+Responsible for:
+
+- Dataset loading
+- Data profiling
+- Missing-value handling
+- Duplicate handling
+- Outlier detection
+- Encoding and scaling
+- Text standardization
+- AI cleaning suggestions
+- Insight generation
+
+---
+
+## `chart_utils.py`
+
+Responsible for:
+
+- Shared Plotly themes
+- Dashboard charts
+- Insight visualizations
+- Comparison analytics
+- Quality gauges
+
+---
+
+## `pdf_utils.py`
+
+Responsible for:
+
+- PDF report generation
+- Statistical summaries
+- Preview tables
+- Chart rendering
+- ReportLab integration
+
+---
+
+# Installation
+
+## 1. Clone Repository
+
+```bash
+git clone <repository-url>
+cd DataRefine
+```
+
+---
+
+## 2. Create Virtual Environment
+
+### Windows
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+---
+
+## 3. Install Dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -165,90 +294,138 @@ pip install -r requirements.txt
 
 ---
 
-## Run the App
+# Run the Application
 
 ```bash
 streamlit run app.py
 ```
 
-Open the local URL shown in terminal (typically `http://localhost:8501`).
+Default local URL:
+
+```text
+http://localhost:8501
+```
 
 ---
 
-## Optional AI Configuration (Ollama)
+# Optional AI Configuration (Ollama)
 
-If you want local AI suggestions:
+To enable local AI-powered cleaning suggestions:
 
-- Start Ollama locally
-- Set environment variables:
+## Start Ollama
 
-```bash
-# Windows PowerShell
+Install and run Ollama locally.
+
+---
+
+## Configure Environment Variables
+
+### Windows PowerShell
+
+```powershell
 $env:OLLAMA_URL="http://localhost:11434/api/generate"
 $env:OLLAMA_MODEL="phi3"
 ```
 
-If Ollama is unavailable, app automatically uses rule-based suggestions.
+### Linux / macOS
 
----
-
-## Data Lifecycle and State
-
-```mermaid
-stateDiagram-v2
-    [*] --> Empty
-    Empty --> Loaded: Upload file
-    Loaded --> Cleaned: Apply operation
-    Cleaned --> Cleaned: More operations
-    Cleaned --> Restored: Undo restore
-    Restored --> Cleaned: New operation
-    Cleaned --> Exported: CSV/XLSX/PDF export
+```bash
+export OLLAMA_URL="http://localhost:11434/api/generate"
+export OLLAMA_MODEL="phi3"
 ```
 
-- `raw_df`: original uploaded dataset
-- `clean_df`: transformed working dataset
-- `cleaning_history`: limited undo snapshots
+If Ollama is unavailable, DataRefine automatically switches to rule-based suggestions.
 
 ---
 
-## Typical User Flow
+# Data Objects
+
+| Object | Description |
+|---|---|
+| `raw_df` | Original uploaded dataset |
+| `clean_df` | Working cleaned dataset |
+| `cleaning_history` | Undo snapshot history |
+
+---
+
+# Typical User Workflow
 
 1. Upload dataset
-2. Review dashboard quality
-3. Get AI suggestions
-4. Run smart clean or manual transformations
-5. Check before-vs-after impact
-6. View AI insights
-7. Export cleaned data + PDF report
+2. Review quality dashboard
+3. Generate AI suggestions
+4. Apply smart/manual cleaning
+5. Compare before vs after metrics
+6. Analyze AI insights
+7. Export cleaned dataset
+8. Generate PDF report
 
 ---
 
-## Known Behavior / Notes
+# Known Behaviors
 
-- Smart clean currently applies a default sequence (missing -> duplicates -> IQR outliers)
-- Outlier cleaning supports IQR and Z-score methods
-- If icon asset is missing, app uses fallback icon rendering
-- PDF export handles edge case where cleaned dataset has zero columns
+- Smart cleaning currently applies:
+  - Missing-value handling
+  - Duplicate removal
+  - IQR outlier filtering
+
+- Outlier detection supports:
+  - IQR
+  - Z-score
+
+- If icon assets are missing:
+  - Fallback rendering is used
+
+- PDF export safely handles:
+  - Empty-column datasets
 
 ---
 
-## Tech Stack
+# Tech Stack
+
+## Frontend
+
+- Streamlit
+- Plotly
+
+## Backend / Data Processing
 
 - Python
-- Streamlit
-- Pandas, NumPy
+- Pandas
+- NumPy
 - Scikit-learn
-- Plotly
-- Matplotlib
+
+## Reporting
+
 - ReportLab
-- OpenPyXL / xlrd
+- Matplotlib
+
+## File Handling
+
+- OpenPyXL
+- xlrd
 
 ---
 
-## Documentation
+# Future Improvements
 
-For detailed method-by-method explanation with examples, see:
+- Isolation Forest outlier detection
+- Multi-file dataset joins
+- Scheduled cleaning workflows
+- Database connectors
+- Real-time collaborative cleaning
+- Cloud deployment support
+- LLM-based anomaly explanations
+
+---
+
+# Documentation
+
+Detailed implementation and method-level documentation:
 
 - `PROJECT_DOCS.md`
 
+---
 
+# License
+
+This project is intended for educational and research purposes.
