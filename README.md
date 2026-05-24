@@ -85,12 +85,10 @@ flowchart TD
 
 ## Outlier Methods Overview
 
-```mermaid
 flowchart LR
-    IQR[IQR Method] --> F1[Per-column bounds using Q1/Q3]
-    Z[Z-Score Method] --> F2[abs(z) > threshold]
-    Note[No Isolation Forest in current version]
-```
+    IQR["IQR Method"] --> F1["Per-column bounds using Q1/Q3"]
+    Z["Z-Score Method"] --> F2["abs(z) > threshold"]
+    Note["No Isolation Forest in current version"]
 
 ---
 
