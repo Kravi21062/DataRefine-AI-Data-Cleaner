@@ -1,0 +1,274 @@
+import { useEffect, useMemo, useState } from 'react';
+
+const API_BASE = 'http://localhost:8000';
+
+function App() {
+  const [sessionId, setSessionId] = useState(localStorage.getItem('datarefine_session') || '');
+  const [dataset, setDataset] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [preview, setPreview] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [file, setFile] = useState(null);
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const ensureSession = async () => {
+    if (sessionId) return sessionId;
+    const response = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
+    const data = await response.json();
+    setSessionId(data.session_id);
+    localStorage.setItem('datarefine_session', data.session_id);
+    return data.session_id;
+  };
+
+  useEffect(() => {
+    if (!sessionId) {
+      ensureSession();
+    }
+  }, [sessionId]);
+
+  const refreshSummary = async () => {
+    const active = sessionId || (await ensureSession());
+    const response = await fetch(`${API_BASE}/api/datasets/${active}/summary`);
+    if (response.ok) {
+      const data = await response.json();
+      setSummary(data);
+    }
+  };
+
+  const refreshPreview = async () => {
+    const active = sessionId || (await ensureSession());
+    const response = await fetch(`${API_BASE}/api/datasets/${active}/preview?limit=10`);
+    if (response.ok) {
+      const data = await response.json();
+      setPreview(data);
+    }
+  };
+
+  const refreshRecommendations = async () => {
+    const active = sessionId || (await ensureSession());
+    const response = await fetch(`${API_BASE}/api/datasets/${active}/recommendations`, { method: 'POST' });
+    if (response.ok) {
+      const data = await response.json();
+      setRecommendations(data.items || []);
+    }
+  };
+
+  const refreshHistory = async () => {
+    const active = sessionId || (await ensureSession());
+    const response = await fetch(`${API_BASE}/api/datasets/${active}/history`);
+    if (response.ok) {
+      const data = await response.json();
+      setHistory(data);
+    }
+  };
+
+  const refreshAll = async () => {
+    await refreshSummary();
+    await refreshPreview();
+    await refreshRecommendations();
+    await refreshHistory();
+  };
+
+  const uploadDataset = async () => {
+    if (!file) {
+      setMessage('Please select a CSV or Excel file first.');
+      return;
+    }
+    const active = sessionId || (await ensureSession());
+    const form = new FormData();
+    form.append('file', file);
+    setLoading(true);
+    const response = await fetch(`${API_BASE}/api/datasets/${active}/upload`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = await response.json();
+    setLoading(false);
+
+    if (!response.ok) {
+      setMessage(data.detail || 'Upload failed');
+      return;
+    }
+
+    setDataset(data);
+    setMessage('Dataset uploaded successfully.');
+    await refreshAll();
+  };
+
+  const applyOperation = async (operation, params = {}) => {
+    if (!sessionId) return;
+    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/clean`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operation, ...params }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      setMessage(data.detail || 'Cleaning failed');
+      return;
+    }
+    setMessage(`Applied ${operation}`);
+    await refreshAll();
+  };
+
+  const exportFile = async (kind) => {
+    if (!sessionId) return;
+    window.open(`${API_BASE}/api/datasets/${sessionId}/export/${kind}`, '_blank');
+  };
+
+  const tableColumns = useMemo(() => {
+    if (!preview.length) return [];
+    return Object.keys(preview[0]);
+  }, [preview]);
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <aside className="fixed left-0 top-0 h-full w-72 bg-slate-900 p-5 text-slate-100">
+        <div className="mb-8">
+          <div className="text-2xl font-bold">DataRefine</div>
+          <div className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">AI Data Workspace</div>
+        </div>
+
+        <nav className="space-y-2 text-sm">
+          {['Overview', 'Data Workspace', 'Data Profiling', 'AI Cleaning', 'Manual Cleaning', 'Reports', 'Settings'].map((item) => (
+            <div key={item} className="rounded-lg border border-slate-700 bg-slate-800/80 px-3 py-2 text-slate-200">
+              {item}
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <main className="ml-72 p-8">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Workspace</p>
+            <h1 className="text-3xl font-bold">Modern Data Cleaning Studio</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <button className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onClick={() => applyOperation('fill_missing', { strategy: 'mean' })}>Fill Missing</button>
+            <button className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onClick={() => applyOperation('drop_duplicates')}>Drop Duplicates</button>
+            <button className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white" onClick={() => exportFile('csv')}>Export CSV</button>
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Upload dataset</h2>
+              <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
+                CSV / XLSX / XLS
+              </span>
+            </div>
+
+            <div className="rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 p-6">
+              <input type="file" accept=".csv,.xlsx,.xls" onChange={(event) => setFile(event.target.files?.[0] || null)} className="block w-full text-sm text-slate-700" />
+              <button
+                onClick={uploadDataset}
+                disabled={loading || !file}
+                className="mt-4 rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? 'Uploading…' : 'Upload dataset'}
+              </button>
+            </div>
+
+            {message && <p className="mt-4 text-sm text-slate-600">{message}</p>}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-xl font-semibold">Quick actions</h2>
+            <div className="mt-4 space-y-3">
+              <button className="w-full rounded border border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm" onClick={() => applyOperation('replace_invalid', { treat_negative_as_invalid: true })}>Replace invalid values</button>
+              <button className="w-full rounded border border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm" onClick={() => applyOperation('remove_outliers', { method: 'iqr', threshold: 1.5 })}>Remove outliers</button>
+              <button className="w-full rounded border border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm" onClick={() => exportFile('xlsx')}>Download Excel</button>
+              <button className="w-full rounded border border-slate-300 bg-slate-50 px-3 py-2 text-left text-sm" onClick={() => exportFile('pdf')}>Generate PDF report</button>
+            </div>
+          </section>
+        </div>
+
+        {summary && (
+          <section className="mt-6 grid gap-4 md:grid-cols-5">
+            <Stat label="Rows" value={summary.rows} />
+            <Stat label="Columns" value={summary.cols} />
+            <Stat label="Missing" value={summary.missing} />
+            <Stat label="Duplicates" value={summary.duplicates} />
+            <Stat label="Quality" value={`${summary.quality_score}/100`} />
+          </section>
+        )}
+
+        {preview.length > 0 && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold">Dataset preview</h2>
+              <span className="text-xs uppercase tracking-wide text-slate-500">first 10 rows</span>
+            </div>
+            <div className="overflow-auto rounded-xl border border-slate-200">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    {tableColumns.map((key) => (
+                      <th key={key} className="border-b border-slate-200 px-3 py-2 font-medium text-slate-700">{key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.map((row, index) => (
+                    <tr key={index} className="border-b border-slate-200 last:border-b-0">
+                      {tableColumns.map((key) => (
+                        <td key={`${index}-${key}`} className="px-3 py-2 text-slate-600">{String(row[key] ?? '')}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
+
+        {recommendations.length > 0 && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-4 text-xl font-semibold">AI recommendations</h2>
+            <div className="space-y-3">
+              {recommendations.map((item, index) => (
+                <div key={index} className="rounded-xl border border-slate-200 p-3">
+                  <div className="mb-1 flex items-center justify-between gap-3">
+                    <strong>{item.title}</strong>
+                    <span className="rounded bg-indigo-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">{item.severity}</span>
+                  </div>
+                  <p className="text-sm text-slate-600">{item.issue}</p>
+                  <p className="mt-2 text-sm text-slate-700">Recommended action: {item.recommendation}</p>
+                  <p className="mt-2 text-xs text-slate-500">Evidence: {item.evidence}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {history.length > 0 && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-4 text-xl font-semibold">Cleaning history</h2>
+            <div className="space-y-2">
+              {history.map((entry, index) => (
+                <div key={index} className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  {entry.label || 'Operation'} — {entry.quality_delta !== undefined ? `Δ quality ${entry.quality_delta}` : 'applied'}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-xs uppercase tracking-[0.16em] text-slate-500">{label}</div>
+      <div className="mt-2 text-2xl font-bold">{value}</div>
+    </div>
+  );
+}
+
+export default App;
