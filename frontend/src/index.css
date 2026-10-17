@@ -1,199 +1,289 @@
-import { useEffect, useState } from 'react';
-import { API_BASE } from './services/api';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-function App() {
-  const [sessionId, setSessionId] = useState(localStorage.getItem('datarefine_session') || '');
-  const [file, setFile] = useState(null);
-  const [dataset, setDataset] = useState(null);
-  const [summary, setSummary] = useState(null);
-  const [preview, setPreview] = useState([]);
-  const [recommendations, setRecommendations] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-
-  const createSession = async () => {
-    const response = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
-    const data = await response.json();
-    setSessionId(data.session_id);
-    localStorage.setItem('datarefine_session', data.session_id);
-  };
-
-  useEffect(() => {
-    if (!sessionId) {
-      createSession();
-    }
-  }, [sessionId]);
-
-  const fetchSummary = async () => {
-    if (!sessionId) return;
-    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/summary`);
-    const data = await response.json();
-    setSummary(data);
-  };
-
-  const fetchPreview = async () => {
-    if (!sessionId) return;
-    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/preview?limit=10`);
-    const data = await response.json();
-    setPreview(data);
-  };
-
-  const fetchRecommendations = async () => {
-    if (!sessionId) return;
-    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/recommendations`, { method: 'POST' });
-    const data = await response.json();
-    setRecommendations(data.items || []);
-  };
-
-  const uploadDataset = async () => {
-    if (!file || !sessionId) return;
-    setLoading(true);
-    const form = new FormData();
-    form.append('file', file);
-    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/upload`, {
-      method: 'POST',
-      body: form,
-    });
-    const data = await response.json();
-    setLoading(false);
-    if (!response.ok) {
-      setMessage(data.detail || 'Upload failed');
-      return;
-    }
-    setDataset(data);
-    setMessage('Dataset uploaded successfully');
-    fetchSummary();
-    fetchPreview();
-    fetchRecommendations();
-  };
-
-  const applyOperation = async (operation, params = {}) => {
-    if (!sessionId) return;
-    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/clean`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ operation, ...params }),
-    });
-    const data = await response.json();
-    if (response.ok) {
-      setMessage(`Applied ${operation}`);
-      fetchSummary();
-      fetchPreview();
-      fetchRecommendations();
-    } else {
-      setMessage(data.detail || 'Cleaning failed');
-    }
-  };
-
-  const exportFile = async (kind) => {
-    if (!sessionId) return;
-    window.open(`${API_BASE}/api/datasets/${sessionId}/export/${kind}`, '_blank');
-  };
-
-  return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <aside className="fixed left-0 top-0 h-screen w-72 bg-slate-900 text-slate-100 p-5">
-        <h1 className="text-2xl font-bold mb-6">DataRefine</h1>
-        <nav className="space-y-3 text-sm">
-          <div className="rounded bg-slate-800 px-3 py-2">Overview</div>
-          <div className="rounded bg-slate-800 px-3 py-2">Workspace</div>
-          <div className="rounded bg-slate-800 px-3 py-2">Profiling</div>
-          <div className="rounded bg-slate-800 px-3 py-2">AI Cleaning</div>
-          <div className="rounded bg-slate-800 px-3 py-2">Manual Cleaning</div>
-          <div className="rounded bg-slate-800 px-3 py-2">Reports</div>
-        </nav>
-      </aside>
-
-      <main className="ml-72 p-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-wide text-slate-500">Workspace</p>
-            <h2 className="text-3xl font-bold">AI Data Cleaning</h2>
-          </div>
-          <div className="flex gap-3">
-            <button className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onClick={() => applyOperation('fill_missing', { strategy: 'mean' })}>Fill Missing</button>
-            <button className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onClick={() => applyOperation('drop_duplicates')}>Drop Duplicates</button>
-            <button className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white" onClick={() => exportFile('csv')}>Export CSV</button>
-          </div>
-        </div>
-
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="mb-3 text-lg font-semibold">Upload dataset</h3>
-          <div className="flex items-center gap-4">
-            <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files[0])} />
-            <button className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={uploadDataset} disabled={!file || loading}>
-              {loading ? 'Uploading…' : 'Upload'}
-            </button>
-          </div>
-          {message && <p className="mt-3 text-sm text-slate-600">{message}</p>}
-        </div>
-
-        {summary && (
-          <div className="mb-6 grid gap-4 md:grid-cols-5">
-            <Stat label="Rows" value={summary.rows} />
-            <Stat label="Columns" value={summary.cols} />
-            <Stat label="Missing" value={summary.missing} />
-            <Stat label="Duplicates" value={summary.duplicates} />
-            <Stat label="Quality" value={`${summary.quality_score}/100`} />
-          </div>
-        )}
-
-        {preview.length > 0 && (
-          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-3 text-lg font-semibold">Preview</h3>
-            <div className="overflow-auto rounded border border-slate-200">
-              <table className="min-w-full text-left text-sm">
-                <thead className="bg-slate-100">
-                  <tr>
-                    {Object.keys(preview[0]).map((key) => (
-                      <th key={key} className="px-3 py-2 font-medium text-slate-700">{key}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {preview.map((row, idx) => (
-                    <tr key={idx} className="border-t border-slate-200">
-                      {Object.values(row).map((value, i) => (
-                        <td key={`${idx}-${i}`} className="px-3 py-2 text-slate-600">{String(value ?? '')}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {recommendations.length > 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="mb-4 text-lg font-semibold">AI recommendations</h3>
-            <div className="space-y-3">
-              {recommendations.map((item, index) => (
-                <div key={index} className="rounded border border-slate-200 p-3">
-                  <div className="mb-1 flex items-center justify-between">
-                    <strong>{item.title}</strong>
-                    <span className="rounded bg-indigo-100 px-2 py-1 text-xs text-indigo-700">{item.severity}</span>
-                  </div>
-                  <p className="text-sm text-slate-600">{item.issue}</p>
-                  <p className="mt-2 text-sm text-slate-600">Recommendation: {item.recommendation}</p>
-                  <p className="mt-2 text-xs text-slate-500">Evidence: {item.evidence}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </main>
-    </div>
-  );
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #0f172a;
+  background: #f8fafc;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-function Stat({ label, value }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-bold">{value}</div>
-    </div>
-  );
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  min-height: 100%;
+  min-width: 320px;
 }
 
-export default App;
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+}
+
+button, input {
+  font: inherit;
+}
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 280px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 28px 20px;
+}
+
+.brand-block { margin-bottom: 32px; }
+.brand-title {
+  font-size: 2rem;
+  font-weight: 800;
+}
+.brand-subtitle {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.sidebar-nav {
+  display: grid;
+  gap: 10px;
+}
+.nav-item {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.6);
+  border-radius: 10px;
+  padding: 12px 14px;
+  color: #e2e8f0;
+}
+
+.content {
+  flex: 1;
+  padding: 32px;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+.eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.topbar h1 {
+  margin: 0;
+  font-size: clamp(2rem, 3vw, 2.8rem);
+}
+
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.header-actions button,
+.action-list button,
+.upload-box button {
+  border: 1px solid #cbd5e1;
+  background: white;
+  color: #0f172a;
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.header-actions .primary {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: white;
+}
+
+.grid {
+  display: grid;
+  gap: 24px;
+}
+.two-up {
+  grid-template-columns: 1.5fr 1fr;
+}
+.card {
+  background: rgba(255,255,255,0.8);
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.04);
+  padding: 22px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #15803d;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 7px 10px;
+}
+
+.upload-box {
+  border: 2px dashed #cbd5e1;
+  background: #f8fafc;
+  padding: 22px;
+  border-radius: 16px;
+}
+.upload-box input {
+  display: block;
+  width: 100%;
+  color: #334155;
+}
+.upload-box button {
+  margin-top: 16px;
+  background: #0f172a;
+  color: white;
+  border-color: #0f172a;
+}
+.upload-box button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.status-text {
+  margin-top: 16px;
+  color: #475569;
+}
+
+.action-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.action-list button {
+  text-align: left;
+  width: 100%;
+}
+
+.stats-grid {
+  margin-top: 28px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+.stat-card {
+  background: rgba(255,255,255,0.85);
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 18px 16px;
+  box-shadow: 0 10px 24px rgba(15,23,42,0.03);
+}
+.stat-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.stat-value {
+  margin-top: 10px;
+  font-size: clamp(1.5rem, 2vw, 2rem);
+  font-weight: 800;
+}
+
+.table-card { margin-top: 28px; }
+.table-header { margin-bottom: 14px; }
+.table-header span {
+  color: #64748b;
+  font-size: 0.76rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.table-wrap {
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 600px;
+}
+thead {
+  background: #f8fafc;
+}
+th, td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #475569;
+}
+
+.recommendation-list,
+.history-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+.recommendation-item,
+.history-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 14px 16px;
+}
+.recommendation-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.recommendation-head span {
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.recommendation-item p,
+.recommendation-item small { margin: 8px 0 0; }
+.recommendation-item p,
+.recommendation-item small { color: #475569; }
+
+@media (max-width: 1024px) {
+  .app-shell { display: block; }
+  .sidebar { width: 100%; }
+  .content { padding: 22px 16px 40px; }
+  .two-up, .stats-grid { grid-template-columns: 1fr; }
+  .topbar { display: block; }
+  .header-actions { margin-top: 16px; }
+}

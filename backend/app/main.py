@@ -1,85 +1,204 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from io import BytesIO
+from typing import Any, Dict, List
 
-import pandas as pd
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
-from app.core.session_store import get_active_df, get_history, get_session, set_clean_df
-from app.services.cleaning import apply_cleaning_operation
+from app.core.config import settings
+from app.core.session_store import create_session, get_active_df, get_session, set_clean_df, set_dataset
 from app.services.ai_service import generate_recommendations
-from app.services.export_service import generate_pdf_report
-from app.services.profiling import compute_quality_score, profile_dataset, summarize_differences
+from app.services.cleaning import apply_cleaning_operation
+from app.services.ingestion import load_uploaded_file
+from app.services.profiling import profile_dataset, summarize_differences
+
+app = FastAPI(title=settings.app_title, version=settings.app_version)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
+@app.get("/health")
+def health_check() -> Dict[str, str]:
+    return {"status": "ok", "service": settings.app_title}
+
+
+@app.get("/")
+def root() -> Dict[str, str]:
+    return {"message": "DataRefine backend is running."}
+
+
+@app.post("/api/sessions")
+def create_session_endpoint() -> Dict[str, str]:
+    return {"session_id": create_session()}
+
+
+@app.post("/api/datasets/{session_id}/upload")
+async def upload_dataset(session_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+
+    try:
+        df, file_info = load_uploaded_file(file)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    set_dataset(session_id, df, file.filename, file_info)
+    return {
+        "session_id": session_id,
+        "dataset_name": file.filename,
+        "rows": int(len(df)),
+        "cols": int(len(df.columns)),
+        "summary": profile_dataset(df),
+    }
+
+
+@app.get("/api/datasets/{session_id}/summary")
 def dataset_summary(session_id: str) -> Dict[str, Any]:
     session = get_session(session_id)
     if session is None:
-        raise KeyError("session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     df = get_active_df(session_id)
     if df is None:
-        return {"rows": 0, "cols": 0, "missing": 0, "duplicates": 0, "quality_score": 0.0, "columns": []}
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset loaded")
     return profile_dataset(df)
 
 
-def dataset_preview(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+@app.get("/api/datasets/{session_id}/preview")
+def dataset_preview(session_id: str, limit: int = Query(10, ge=1, le=100)) -> List[Dict[str, Any]]:
     session = get_session(session_id)
     if session is None:
-        raise KeyError("session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     df = get_active_df(session_id)
     if df is None:
         return []
     return df.head(limit).to_dict(orient="records")
 
 
-def apply_operation(session_id: str, operation: str, **kwargs) -> Dict[str, Any]:
+@app.post("/api/datasets/{session_id}/recommendations")
+def dataset_recommendations(session_id: str) -> Dict[str, Any]:
     session = get_session(session_id)
     if session is None:
-        raise KeyError("session not found")
-    before_df = get_active_df(session_id).copy()
-    after_df = apply_cleaning_operation(before_df, operation, **kwargs)
-    set_clean_df(session_id, after_df)
-    diff = summarize_differences(before_df, after_df)
-    session["history"].append({
-        "label": operation,
-        "meta": kwargs,
-        "rows_before": diff["rows_before"],
-        "rows_after": diff["rows_after"],
-    })
-    return diff
-
-
-def generate_recommendation_payload(session_id: str) -> Dict[str, Any]:
-    session = get_session(session_id)
-    if session is None:
-        raise KeyError("session not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
     df = get_active_df(session_id)
     if df is None:
-        return {"source": "rule_based", "items": []}
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset loaded")
     return generate_recommendations(df)
 
 
-def export_csv_bytes(session_id: str) -> bytes:
-    df = get_active_df(session_id)
-    if df is None:
-        raise ValueError("No dataset loaded")
-    return df.to_csv(index=False).encode("utf-8")
-
-
-def export_xlsx_bytes(session_id: str) -> bytes:
-    df = get_active_df(session_id)
-    if df is None:
-        raise ValueError("No dataset loaded")
-    from io import BytesIO
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False)
-    return buffer.getvalue()
-
-
-def export_pdf_bytes(session_id: str) -> bytes:
+@app.post("/api/datasets/{session_id}/clean")
+def clean_dataset(session_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     session = get_session(session_id)
     if session is None:
-        raise KeyError("session not found")
-    raw_df = session["raw_df"]
-    clean_df = session["clean_df"]
-    return generate_pdf_report(raw_df, clean_df, session["history"], session.get("dataset_name", "dataset.csv"))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    df = get_active_df(session_id)
+    if df is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset loaded")
+
+    operation = payload.get("operation")
+    if not operation:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Operation is required")
+
+    try:
+        before_df = df.copy()
+        kwargs = {k: v for k, v in payload.items() if k != "operation"}
+        after_df = apply_cleaning_operation(before_df, operation, **kwargs)
+        set_clean_df(session_id, after_df)
+        diff = summarize_differences(before_df, after_df)
+        session["history"].append({"label": operation, "meta": kwargs, **diff})
+        return {"message": f"Applied {operation}", "summary": diff}
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@app.get("/api/datasets/{session_id}/comparison")
+def dataset_comparison(session_id: str) -> Dict[str, Any]:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    raw_df = session.get("raw_df")
+    clean_df = session.get("clean_df")
+    if raw_df is None or clean_df is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset missing")
+    return summarize_differences(raw_df, clean_df)
+
+
+@app.get("/api/datasets/{session_id}/history")
+def dataset_history(session_id: str) -> List[Dict[str, Any]]:
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    return session.get("history", [])
+
+
+@app.get("/api/datasets/{session_id}/export/csv")
+def export_csv(session_id: str):
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    df = get_active_df(session_id)
+    if df is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset loaded")
+
+    payload = df.to_csv(index=False).encode("utf-8")
+    filename = session.get("dataset_name", "cleaned_dataset")
+    name = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return StreamingResponse(
+        BytesIO(payload),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{name}_cleaned.csv"'},
+    )
+
+
+@app.get("/api/datasets/{session_id}/export/xlsx")
+def export_xlsx(session_id: str):
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    df = get_active_df(session_id)
+    if df is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No dataset loaded")
+
+    import pandas as pd
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
+
+    filename = session.get("dataset_name", "cleaned_dataset")
+    name = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return StreamingResponse(
+        output.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{name}_cleaned.xlsx"'},
+    )
+
+
+@app.get("/api/datasets/{session_id}/export/pdf")
+def export_pdf(session_id: str):
+    session = get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    raw_df = session.get("raw_df")
+    clean_df = session.get("clean_df")
+    if raw_df is None or clean_df is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset missing")
+
+    from app.services.export_service import generate_pdf_report
+
+    pdf_bytes = generate_pdf_report(raw_df, clean_df, session.get("history", []), session.get("dataset_name", "dataset.csv"))
+    filename = session.get("dataset_name", "dataset.csv")
+    name = filename.rsplit(".", 1)[0] if "." in filename else filename
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{name}_report.pdf"'},
+    )
