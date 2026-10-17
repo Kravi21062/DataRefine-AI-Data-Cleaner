@@ -1,0 +1,73 @@
+# DataRefine 2.0
+
+DataRefine is a modern AI-assisted data cleaning and profiling platform. This repository has been rebuilt from the original Streamlit prototype into a full-stack architecture using a React + Vite frontend and a FastAPI backend.
+
+## Features implemented
+
+- CSV and Excel uploads
+- Dataset preview and summary metrics
+- AI and deterministic recommendations
+- Missing-value handling
+- Duplicate detection and removal
+- Outlier detection and removal
+- Type conversion and text standardization
+- CSV/XLSX/PDF export
+- Session-based dataset management
+
+## Project layout
+
+```text
+backend/          FastAPI service and data-processing logic
+frontend/         Vite + React app
+Dockerfile        Container for backend service
+README.md         Setup instructions
+```
+
+## Local development
+
+### Backend
+
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+## Environment
+
+Copy `backend/.env.example` to `backend/.env` and adjust settings as needed.
+
+## Testing
+
+```bash
+cd backend
+pytest tests/test_backend.py -q
+```
+
+## Deployment
+
+- Frontend: build with `npm run build` and serve the `dist` folder with a web server or static hosting.
+- Backend: deploy the FastAPI app with Uvicorn or a Docker container.
+
+## Known limitations
+
+- This is a working vertical slice rather than a full feature-complete data workspace.
+- AI recommendations depend on an optional Ollama endpoint and fall back to deterministic rules.
+- Large datasets may be rate-limited by in-memory session handling.
+
+## Architecture
+
+- frontend uses fetch to call the FastAPI backend
+- backend stores dataset state per session in memory
+- data processing is done server-side with pandas/scikit-learn
+- AI recommendations use a provider abstraction, with a rule-based fallback if local inference is unavailable

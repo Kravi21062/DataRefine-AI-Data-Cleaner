@@ -1,0 +1,199 @@
+import { useEffect, useState } from 'react';
+import { API_BASE } from './services/api';
+
+function App() {
+  const [sessionId, setSessionId] = useState(localStorage.getItem('datarefine_session') || '');
+  const [file, setFile] = useState(null);
+  const [dataset, setDataset] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [preview, setPreview] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+
+  const createSession = async () => {
+    const response = await fetch(`${API_BASE}/api/sessions`, { method: 'POST' });
+    const data = await response.json();
+    setSessionId(data.session_id);
+    localStorage.setItem('datarefine_session', data.session_id);
+  };
+
+  useEffect(() => {
+    if (!sessionId) {
+      createSession();
+    }
+  }, [sessionId]);
+
+  const fetchSummary = async () => {
+    if (!sessionId) return;
+    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/summary`);
+    const data = await response.json();
+    setSummary(data);
+  };
+
+  const fetchPreview = async () => {
+    if (!sessionId) return;
+    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/preview?limit=10`);
+    const data = await response.json();
+    setPreview(data);
+  };
+
+  const fetchRecommendations = async () => {
+    if (!sessionId) return;
+    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/recommendations`, { method: 'POST' });
+    const data = await response.json();
+    setRecommendations(data.items || []);
+  };
+
+  const uploadDataset = async () => {
+    if (!file || !sessionId) return;
+    setLoading(true);
+    const form = new FormData();
+    form.append('file', file);
+    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/upload`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = await response.json();
+    setLoading(false);
+    if (!response.ok) {
+      setMessage(data.detail || 'Upload failed');
+      return;
+    }
+    setDataset(data);
+    setMessage('Dataset uploaded successfully');
+    fetchSummary();
+    fetchPreview();
+    fetchRecommendations();
+  };
+
+  const applyOperation = async (operation, params = {}) => {
+    if (!sessionId) return;
+    const response = await fetch(`${API_BASE}/api/datasets/${sessionId}/clean`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operation, ...params }),
+    });
+    const data = await response.json();
+    if (response.ok) {
+      setMessage(`Applied ${operation}`);
+      fetchSummary();
+      fetchPreview();
+      fetchRecommendations();
+    } else {
+      setMessage(data.detail || 'Cleaning failed');
+    }
+  };
+
+  const exportFile = async (kind) => {
+    if (!sessionId) return;
+    window.open(`${API_BASE}/api/datasets/${sessionId}/export/${kind}`, '_blank');
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <aside className="fixed left-0 top-0 h-screen w-72 bg-slate-900 text-slate-100 p-5">
+        <h1 className="text-2xl font-bold mb-6">DataRefine</h1>
+        <nav className="space-y-3 text-sm">
+          <div className="rounded bg-slate-800 px-3 py-2">Overview</div>
+          <div className="rounded bg-slate-800 px-3 py-2">Workspace</div>
+          <div className="rounded bg-slate-800 px-3 py-2">Profiling</div>
+          <div className="rounded bg-slate-800 px-3 py-2">AI Cleaning</div>
+          <div className="rounded bg-slate-800 px-3 py-2">Manual Cleaning</div>
+          <div className="rounded bg-slate-800 px-3 py-2">Reports</div>
+        </nav>
+      </aside>
+
+      <main className="ml-72 p-8">
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-wide text-slate-500">Workspace</p>
+            <h2 className="text-3xl font-bold">AI Data Cleaning</h2>
+          </div>
+          <div className="flex gap-3">
+            <button className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onClick={() => applyOperation('fill_missing', { strategy: 'mean' })}>Fill Missing</button>
+            <button className="rounded border border-slate-300 bg-white px-4 py-2 text-sm font-medium" onClick={() => applyOperation('drop_duplicates')}>Drop Duplicates</button>
+            <button className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white" onClick={() => exportFile('csv')}>Export CSV</button>
+          </div>
+        </div>
+
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h3 className="mb-3 text-lg font-semibold">Upload dataset</h3>
+          <div className="flex items-center gap-4">
+            <input type="file" accept=".csv,.xlsx,.xls" onChange={(e) => setFile(e.target.files[0])} />
+            <button className="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white" onClick={uploadDataset} disabled={!file || loading}>
+              {loading ? 'Uploading…' : 'Upload'}
+            </button>
+          </div>
+          {message && <p className="mt-3 text-sm text-slate-600">{message}</p>}
+        </div>
+
+        {summary && (
+          <div className="mb-6 grid gap-4 md:grid-cols-5">
+            <Stat label="Rows" value={summary.rows} />
+            <Stat label="Columns" value={summary.cols} />
+            <Stat label="Missing" value={summary.missing} />
+            <Stat label="Duplicates" value={summary.duplicates} />
+            <Stat label="Quality" value={`${summary.quality_score}/100`} />
+          </div>
+        )}
+
+        {preview.length > 0 && (
+          <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-3 text-lg font-semibold">Preview</h3>
+            <div className="overflow-auto rounded border border-slate-200">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-slate-100">
+                  <tr>
+                    {Object.keys(preview[0]).map((key) => (
+                      <th key={key} className="px-3 py-2 font-medium text-slate-700">{key}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {preview.map((row, idx) => (
+                    <tr key={idx} className="border-t border-slate-200">
+                      {Object.values(row).map((value, i) => (
+                        <td key={`${idx}-${i}`} className="px-3 py-2 text-slate-600">{String(value ?? '')}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {recommendations.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="mb-4 text-lg font-semibold">AI recommendations</h3>
+            <div className="space-y-3">
+              {recommendations.map((item, index) => (
+                <div key={index} className="rounded border border-slate-200 p-3">
+                  <div className="mb-1 flex items-center justify-between">
+                    <strong>{item.title}</strong>
+                    <span className="rounded bg-indigo-100 px-2 py-1 text-xs text-indigo-700">{item.severity}</span>
+                  </div>
+                  <p className="text-sm text-slate-600">{item.issue}</p>
+                  <p className="mt-2 text-sm text-slate-600">Recommendation: {item.recommendation}</p>
+                  <p className="mt-2 text-xs text-slate-500">Evidence: {item.evidence}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Stat({ label, value }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
+      <div className="mt-2 text-2xl font-bold">{value}</div>
+    </div>
+  );
+}
+
+export default App;

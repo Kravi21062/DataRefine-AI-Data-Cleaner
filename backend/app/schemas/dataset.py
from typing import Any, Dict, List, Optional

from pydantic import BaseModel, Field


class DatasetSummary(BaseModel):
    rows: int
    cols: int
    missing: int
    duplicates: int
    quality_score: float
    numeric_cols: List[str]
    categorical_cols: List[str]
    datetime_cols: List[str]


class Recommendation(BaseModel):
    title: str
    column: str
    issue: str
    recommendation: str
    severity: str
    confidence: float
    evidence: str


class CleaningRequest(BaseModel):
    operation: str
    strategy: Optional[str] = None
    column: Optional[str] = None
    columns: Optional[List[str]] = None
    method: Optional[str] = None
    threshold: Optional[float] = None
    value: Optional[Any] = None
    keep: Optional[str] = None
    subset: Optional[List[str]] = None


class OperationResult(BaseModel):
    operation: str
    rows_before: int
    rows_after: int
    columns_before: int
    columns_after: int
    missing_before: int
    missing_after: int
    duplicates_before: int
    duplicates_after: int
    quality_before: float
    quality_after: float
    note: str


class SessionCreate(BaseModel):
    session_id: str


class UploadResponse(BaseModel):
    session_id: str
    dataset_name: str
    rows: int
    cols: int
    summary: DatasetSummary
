@@ -1,0 +1,86 @@
+from __future__ import annotations
+
+from copy import deepcopy
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional
+
+
+SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+
+def create_session() -> str:
+    import uuid
+
+    session_id = str(uuid.uuid4())
+    SESSIONS[session_id] = {
+        "created_at": datetime.utcnow(),
+        "updated_at": datetime.utcnow(),
+        "session_id": session_id,
+        "raw_df": None,
+        "clean_df": None,
+        "dataset_name": None,
+        "file_info": {},
+        "history": [],
+    }
+    return session_id
+
+
+def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+    session = SESSIONS.get(session_id)
+    if not session:
+        return None
+    session["updated_at"] = datetime.utcnow()
+    return session
+
+
+def remove_expired_sessions() -> None:
+    cutoff = datetime.utcnow() - timedelta(minutes=60)
+    for sid, session in list(SESSIONS.items()):
+        if session["updated_at"] < cutoff:
+            SESSIONS.pop(sid, None)
+
+
+def set_dataset(session_id: str, df, dataset_name: str, file_info: Dict[str, Any]):
+    session = get_session(session_id)
+    if session is None:
+        raise KeyError("session not found")
+    session["raw_df"] = df.copy()
+    session["clean_df"] = df.copy()
+    session["dataset_name"] = dataset_name
+    session["file_info"] = file_info
+    session["history"] = []
+
+
+def get_active_df(session_id: str):
+    session = get_session(session_id)
+    if not session:
+        return None
+    return session.get("clean_df") or session.get("raw_df")
+
+
+def set_clean_df(session_id: str, df):
+    session = get_session(session_id)
+    if session is None:
+        raise KeyError("session not found")
+    session["clean_df"] = df.copy()
+
+
+def push_history(session_id: str, label: str, before_df, after_df, operation_meta: Optional[Dict[str, Any]] = None):
+    session = get_session(session_id)
+    if session is None:
+        return
+    entry = {
+        "label": label,
+        "before": deepcopy(before_df),
+        "after": deepcopy(after_df),
+        "meta": operation_meta or {},
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    session["history"].append(entry)
+    if len(session["history"]) > 20:
+        session["history"] = session["history"][-20:]
+
+
+def get_history(session_id: str):
+    session = get_session(session_id)
+    return session["history"] if session else []
