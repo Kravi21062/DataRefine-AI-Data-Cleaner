@@ -2,6 +2,8 @@
 
 DataRefine is a Streamlit-based AI-powered data cleaning and profiling tool designed for messy real-world datasets. It helps users upload datasets, profile data quality, apply smart/manual cleaning operations, generate AI-driven insights, compare before-vs-after transformations, and export professional PDF reports.
 
+DataRefine is an open-source AI-powered data cleaning and profiling tool. It helps users upload datasets, identify data quality issues, handle missing values and duplicates, detect outliers, generate AI-assisted cleaning suggestions, visualize before-and-after results, and export cleaned datasets and PDF reports. The project aims to make data preparation easier and more accessible.
+
 ---
 # Live: (https://datarefine-ai-data-cleaner.streamlit.app/)
 
